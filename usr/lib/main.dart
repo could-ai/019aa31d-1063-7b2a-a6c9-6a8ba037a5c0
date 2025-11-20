@@ -10,7 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:screenshot/screenshot.dart';
-import 'package:gallery_saver/gallery_saver.dart';
+import 'package:image_gallery_saver/image_gallery_saver.dart';
 
 void main() {
   runApp(const UrduGraphixApp());
@@ -122,17 +122,18 @@ class _HomeScreenState extends State<HomeScreen> {
       final Uint8List? imageBytes = await _screenshotController.capture();
       
       if (imageBytes != null) {
-        final directory = await getTemporaryDirectory();
-        final path = '${directory.path}/urdu_graphix_${DateTime.now().millisecondsSinceEpoch}.png';
-        final file = File(path);
-        await file.writeAsBytes(imageBytes);
+        // Save to gallery directly using bytes
+        final result = await ImageGallerySaver.saveImage(
+          imageBytes,
+          quality: 100,
+          name: "urdu_graphix_${DateTime.now().millisecondsSinceEpoch}"
+        );
 
-        // Save to gallery
-        await GallerySaver.saveImage(path, albumName: 'UrduGraphix');
+        final isSuccess = result['isSuccess'] ?? false;
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تصویر محفوظ کر لی گئی ہے (Image Saved)')),
+            SnackBar(content: Text(isSuccess ? 'تصویر محفوظ کر لی گئی ہے (Image Saved)' : 'Failed to save image')),
           );
         }
       }
@@ -317,17 +318,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             top: item.offset.dy,
                             child: GestureDetector(
                               onPanUpdate: (details) {
-                                // Calculate new position relative to parent
-                                // We need to ensure it stays somewhat within bounds if desired, 
-                                // but for now free movement is fine.
-                                final newOffset = Offset(
-                                  item.offset.dx + details.delta.dx * -1, // Invert X for RTL drag feel if needed, but usually standard drag is better. 
-                                  // Actually standard drag:
-                                  // In RTL, dx might be inverted depending on Directionality. 
-                                  // Let's test standard first.
-                                );
-                                
-                                // Standard drag logic works best regardless of RTL usually
                                 _updateTextPosition(item.id, item.offset + details.delta);
                               },
                               onLongPress: () {

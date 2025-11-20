@@ -1,120 +1,446 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:screenshot/screenshot.dart';
+import 'package:gallery_saver/gallery_saver.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const UrduGraphixApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class UrduGraphixApp extends StatelessWidget {
+  const UrduGraphixApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Urdu Graphix',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      // Set locale to RTL for Urdu support
+      builder: (context, child) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: child!,
+        );
+      },
+      home: const HomeScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _HomeScreenState extends State<HomeScreen> {
+  // State variables
+  File? _backgroundImage;
+  final TextEditingController _textController = TextEditingController();
+  double _fontSize = 32.0;
+  Color _textColor = Colors.black;
+  final List<TextItem> _textItems = [];
+  
+  // Screenshot controller to capture the poster
+  final ScreenshotController _screenshotController = ScreenshotController();
+  final ImagePicker _picker = ImagePicker();
 
-  void _incrementCounter() {
+  // Predefined font sizes matching the HTML example
+  final List<double> _fontSizes = [24, 32, 40, 48, 56, 64, 72];
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  // Pick background image
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() {
+        _backgroundImage = File(image.path);
+      });
+    }
+  }
+
+  // Add text to canvas
+  void _addText() {
+    if (_textController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('براہ کرم اردو میں کچھ لکھیں! (Please write something)')),
+      );
+      return;
+    }
+
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _textItems.add(TextItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        text: _textController.text,
+        fontSize: _fontSize,
+        color: _textColor,
+        offset: const Offset(100, 100), // Default position
+      ));
+      _textController.clear();
+    });
+  }
+
+  // Clear canvas
+  void _clearCanvas() {
+    setState(() {
+      _backgroundImage = null;
+      _textItems.clear();
+      _textController.clear();
+    });
+  }
+
+  // Save image
+  Future<void> _saveImage() async {
+    try {
+      // Check permissions on mobile
+      if (Platform.isAndroid || Platform.isIOS) {
+        var status = await Permission.storage.status;
+        if (!status.isGranted) {
+          await Permission.storage.request();
+        }
+      }
+
+      final Uint8List? imageBytes = await _screenshotController.capture();
+      
+      if (imageBytes != null) {
+        final directory = await getTemporaryDirectory();
+        final path = '${directory.path}/urdu_graphix_${DateTime.now().millisecondsSinceEpoch}.png';
+        final file = File(path);
+        await file.writeAsBytes(imageBytes);
+
+        // Save to gallery
+        await GallerySaver.saveImage(path, albumName: 'UrduGraphix');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('تصویر محفوظ کر لی گئی ہے (Image Saved)')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving image: $e')),
+        );
+      }
+    }
+  }
+
+  // Update text position
+  void _updateTextPosition(String id, Offset newOffset) {
+    setState(() {
+      final index = _textItems.indexWhere((item) => item.id == id);
+      if (index != -1) {
+        _textItems[index] = _textItems[index].copyWith(offset: newOffset);
+      }
+    });
+  }
+
+  // Delete text item
+  void _deleteTextItem(String id) {
+    setState(() {
+      _textItems.removeWhere((item) => item.id == id);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('Urdu Graphix - اردو گرافکس'),
+        centerTitle: true,
+        backgroundColor: Colors.grey[100],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text('$_counter', style: Theme.of(context).textTheme.headlineMedium),
-          ],
-        ),
+      body: Column(
+        children: [
+          // Tools Section
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.white,
+            child: Column(
+              children: [
+                // Input Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _textController,
+                        textDirection: TextDirection.rtl,
+                        decoration: const InputDecoration(
+                          hintText: 'یہاں اردو میں لکھیں (Write Urdu here)',
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        style: GoogleFonts.notoNastaliqUrdu(),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    IconButton(
+                      onPressed: _pickImage,
+                      icon: const Icon(Icons.image),
+                      tooltip: 'بیک گراؤنڈ (Background)',
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.blue.shade50,
+                        foregroundColor: Colors.blue,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                
+                // Controls Row
+                Row(
+                  children: [
+                    const Text('سائز: '),
+                    DropdownButton<double>(
+                      value: _fontSize,
+                      items: _fontSizes.map((s) => DropdownMenuItem(
+                        value: s,
+                        child: Text(s.toInt().toString()),
+                      )).toList(),
+                      onChanged: (v) => setState(() => _fontSize = v!),
+                    ),
+                    const SizedBox(width: 16),
+                    const Text('رنگ: '),
+                    GestureDetector(
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('رنگ منتخب کریں'),
+                            content: SingleChildScrollView(
+                              child: ColorPicker(
+                                pickerColor: _textColor,
+                                onColorChanged: (color) => setState(() => _textColor = color),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('OK'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: _textColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    ElevatedButton.icon(
+                      onPressed: _addText,
+                      icon: const Icon(Icons.add),
+                      label: const Text('شامل کریں'),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(height: 1),
+
+          // Canvas Area
+          Expanded(
+            child: Container(
+              color: const Color(0xFFF8F9FA), // Light grey background like HTML
+              child: Center(
+                child: SingleChildScrollView(
+                  child: Screenshot(
+                    controller: _screenshotController,
+                    child: Container(
+                      width: 350, // Fixed width for poster feel
+                      height: 350, // Fixed height
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: Colors.grey.shade400, width: 2, style: BorderStyle.solid),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 10,
+                            spreadRadius: 2,
+                          )
+                        ],
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // Background Image
+                          if (_backgroundImage != null)
+                            Positioned.fill(
+                              child: Image.file(
+                                _backgroundImage!,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          
+                          // Placeholder text if empty
+                          if (_backgroundImage == null && _textItems.isEmpty)
+                            Center(
+                              child: Text(
+                                'تصویر یا ٹیکسٹ شامل کریں\n(Add Image or Text)',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey.shade400),
+                              ),
+                            ),
+
+                          // Text Items
+                          ..._textItems.map((item) => Positioned(
+                            left: item.offset.dx,
+                            top: item.offset.dy,
+                            child: GestureDetector(
+                              onPanUpdate: (details) {
+                                // Calculate new position relative to parent
+                                // We need to ensure it stays somewhat within bounds if desired, 
+                                // but for now free movement is fine.
+                                final newOffset = Offset(
+                                  item.offset.dx + details.delta.dx * -1, // Invert X for RTL drag feel if needed, but usually standard drag is better. 
+                                  // Actually standard drag:
+                                  // In RTL, dx might be inverted depending on Directionality. 
+                                  // Let's test standard first.
+                                );
+                                
+                                // Standard drag logic works best regardless of RTL usually
+                                _updateTextPosition(item.id, item.offset + details.delta);
+                              },
+                              onLongPress: () {
+                                // Show delete option
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('حذف کریں؟ (Delete?)'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: const Text('نہیں'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          _deleteTextItem(item.id);
+                                          Navigator.pop(context);
+                                        },
+                                        child: const Text('ہاں', style: TextStyle(color: Colors.red)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  item.text,
+                                  style: GoogleFonts.notoNastaliqUrdu(
+                                    fontSize: item.fontSize,
+                                    color: item.color,
+                                    height: 1.5, // Better line height for Urdu
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Bottom Action Bar
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.white,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _clearCanvas,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('نیا پوسٹر'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _saveImage,
+                  icon: const Icon(Icons.download),
+                  label: const Text('ڈاؤن لوڈ کریں'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+    );
+  }
+}
+
+// Model class for Text Items
+class TextItem {
+  final String id;
+  final String text;
+  final double fontSize;
+  final Color color;
+  final Offset offset;
+
+  TextItem({
+    required this.id,
+    required this.text,
+    required this.fontSize,
+    required this.color,
+    required this.offset,
+  });
+
+  TextItem copyWith({
+    String? id,
+    String? text,
+    double? fontSize,
+    Color? color,
+    Offset? offset,
+  }) {
+    return TextItem(
+      id: id ?? this.id,
+      text: text ?? this.text,
+      fontSize: fontSize ?? this.fontSize,
+      color: color ?? this.color,
+      offset: offset ?? this.offset,
     );
   }
 }
